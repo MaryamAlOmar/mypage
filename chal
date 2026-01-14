@@ -719,3 +719,273 @@ Impacket (secretsdump.py): Hash extraction.
 CrackStation / Hashcat / John: Password cracking.
 PowerShell: Target interaction & file system navigation.
 Thanks for reading! I hope this detailed walkthrough helps you conquer the Blueprint room on TryHackMe or provides valuable insights into web application security and Windows post-exploitation. Happy hacking!
+Task 1
+Website Analysis
+
+Start Machine
+This task involves you, paying attention to details and finding the 'keys to the castle'.
+
+This room is designed for beginners, however, everyone is welcomed to try it out!
+
+Enjoy the Anthem.
+
+In this room, you don't need to brute force any login page. Just your preferred browser and Remote Desktop.
+
+Please give the box up to 5 minutes to boot and configure.
+
+Answer the questions below
+Let's run nmap and check what ports are open.
+
+No answer needed
+
+Correct Answer
+What port is for the web server?
+
+80
+
+Correct Answer
+What port is for remote desktop service?
+
+3389
+
+Correct Answer
+What is a possible password in one of the pages web crawlers check for?
+
+UmbracoIsTheBest!
+
+Correct Answer
+
+What CMS is the website using?
+
+Umbraco
+
+Correct Answer
+What is the domain of the website?
+anthem.com
+
+Correct Answer
+What's the name of the Administrator
+
+Solomon Grundy
+
+Correct Answer
+
+Can we find find the email address of the administrator?
+
+SG@anthem.com
+
+Correct Answer
+
+Task 2
+Spot the flags
+Task 2
+Spot the flags
+Our beloved admin left some flags behind that we require to gather before we proceed to the next task..
+
+Answer the questions below
+Anthem are hiring!
+
+What is flag 1?
+
+THM{L0L_WH0_US3S_M3T4}
+
+Correct Answer
+
+What is flag 2?
+
+THM{G!T_G00D}
+
+Correct Answer
+
+What is flag 3?
+
+THM{L0L_WH0_D15}
+
+Correct Answer
+
+What is flag 4?
+
+THM{AN0TH3R_M3TA}
+
+Correct Answer
+
+Task 3
+Final stage
+Let's get into the box using the intel we gathered.
+
+Answer the questions below
+Let's figure out the username and password to log in to the box.(The box is not on a domain)
+
+No answer needed
+
+Correct Answer
+Gain initial access to the machine, what is the contents of user.txt?
+
+THM{N00T_NO0T}
+
+Correct Answer
+Can we spot the admin password?
+
+ChangeMeBaby1MoreTime
+
+Correct Answer
+
+Escalate your privileges to root, what is the contents of root.txt?
+
+THM{Y0U_4R3_1337}
+
+Correct Answer
+TryHackMe — Anthem
+Cyber Anom
+Cyber Anom
+
+Follow
+4 min read
+·
+Sep 16, 2025
+2
+
+
+
+
+# Context
+
+Room Link: https://tryhackme.com/room/anthem
+
+# Task 1: Website Analysis
+
+## Q1
+
+Let’s run nmap and check what ports are open.
+
+nmap -Pn -sV -sC [target.machine.ip.addr]
+Press enter or click to view image in full size
+
+HTTP (port 80), RDP (port 3389) are seen as open. SYN scans were blocked so I ran Nmap again with host discovery disabled.
+
+## Q2
+
+What port is for the web server?
+
+Refer to your Nmap scan.
+## Q3
+What port is for remote desktop service?
+
+Refer to your Nmap scan.
+## Q4
+
+What is a possible password in one of the pages web crawlers check for?
+
+Navigate to the machine on port 80 and you’ll see a web page.
+Press enter or click to view image in full size
+
+I ran Gobuster against the target to find any possible sub-directories. This took extensive time so I let that run in another tab.
+gobuster dir -u http://[target.machine.ip.addr]/ -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt
+Press enter or click to view image in full size
+
+I found something interesting at robots.txt. This should answer the question.
+curl [target.machine.ip.addr]/robots.txt
+Press enter or click to view image in full size
+
+## Q5
+
+What CMS is the website using?
+
+I looked up “umbraco” and it appears to be a CMS.
+## Q6
+
+What is the domain of the website?
+
+Navigate to the site on port 80 to find this. I added the IP and site to my /etc/hosts file as well.
+Press enter or click to view image in full size
+
+## Q7
+
+What’s the name of the Administrator
+
+I went to a post about the IT department and there was a poem written about the admin.
+Press enter or click to view image in full size
+
+I looked this up on the browser and found a name tied to a nursery rhyme.
+Press enter or click to view image in full size
+
+## Q8
+
+Get Cyber Anom’s stories in your inbox
+Join Medium for free to get updates from this writer.
+
+Enter your email
+Subscribe
+Can we find find the email address of the administrator?
+
+There’s a post about an open position. Notice how the email for this is jd@anthem.com.
+Press enter or click to view image in full size
+
+This appears to be initials. Try to replace the admin’s initials with “jd”.
+
+# Task 2: Spot the Flags
+
+## Flag 1
+
+Inspect the site on Burp Suite or on the browser itself and something will stand out.
+Press enter or click to view image in full size
+
+## Flag 2
+
+Search for THM{ and you’ll find another flag on the same page.
+Press enter or click to view image in full size
+
+## Flag 3
+
+The third flag is found on the author page with the same format. Flag 2 is found again here.
+Press enter or click to view image in full size
+
+## Flag 4
+
+The fourth flag can be found on the author page.
+Press enter or click to view image in full size
+
+# Task 3: Final Stage
+
+## user.txt
+
+After looking around, I remembed our Nmap scan had port 3389 open (RDP). I attempted to RDP into the target IP with the clear-text string found in robots.txt.
+xfreerdp3 /u:sg /p:[pass] /v:[target.machine.ip.addr] /drive:/tmp /cert:ignore +clipboard
+Press enter or click to view image in full size
+
+I checked what privileges the user had. “SeChangeNotifyPrivilege” was in place, which allows a user to traverse directories without granting access to list contents.
+Bypass traverse checking - Windows 10
+Describes the best practices, location, values, policy management, and security considerations for the Bypass traverse…
+learn.microsoft.com
+
+Press enter or click to view image in full size
+
+## Admin password
+
+I found a hidden directory within the C drive.
+dir -Directory -Hidden
+Press enter or click to view image in full size
+
+I couldn’t access the file with PowerShell, so I tried File Explorer. I was met with this authorization error.
+
+Press enter or click to view image in full size
+
+Attempt to add yourself to be able to access the file by editing it’s permissions.
+Press enter or click to view image in full size
+
+Press enter or click to view image in full size
+
+Press enter or click to view image in full size
+
+Press enter or click to view image in full size
+
+I was able to read the file after applying my changes.
+Press enter or click to view image in full size
+
+## Privilege Escalation
+
+Stop your current RDP session then connect with the new Administrator credentials.
+xfreerdp3 /u:Administrator /p:[pass] /v:[target.machine.ip.addr] /drive:/tmp /cert:ignore +clipboard
+Press enter or click to view image in full size
+
+You will find the last flag for root here.
